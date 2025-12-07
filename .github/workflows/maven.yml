@@ -1,46 +1,55 @@
-
-
 name: CICD pipeline
 
 on:
   push:
-    branches: [ "main" ]
-  # pull_request:
-  #   branches: [ "main" ] //we just want to triger pipe line on push only
+    branches: ["main"]
 
 jobs:
   compile:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: maven
-    - name: Build with Maven
-      run: mvn -B package --file pom.xml
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+      - name: Build with Maven
+        run: mvn -B package --file pom.xml
+      - name: Upload build artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: maven-build
+          path: target/*.jar
 
   security-check:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest            # changed from self-hosted
     needs: compile
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Trivy Installation
-      run: |
-        sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-        echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
-        sudo apt-get update -y
-        sudo apt-get install -y trivy
-
-    - name: Trivy FS Scan
-      run: trivy fs --format table -o fs-report.json .
-
-    - name: Gitleaks Installation
-      run: sudo apt install gitleaks -y
-    - name: Gitleaks Code Scan
-      run: gitleaks detect source . -r gitleaks-report.json -f json
+      - uses: actions/checkout@v4
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v1
+        with:
+          format: 'json'               # json makes programmatic use easier
+          output: 'trivy-fs-report.json'
+          scan-type: 'fs'
+          vuln-type: 'os,library'
+      - name: Run Trivy image scan (example)
+        # optional: only if you build a container image
+        # uses: aquasecurity/trivy-action@v1
+        # with:
+        #   format: 'json'
+        #   image-ref: 'your-image:tag'
+        #   output: 'trivy-image-report.json'
+      - name: Run Gitleaks scan
+        uses: zricethezav/gitleaks-action@v2
+        with:
+          args: detect --source . --report-path=gitleaks-report.json --report-format=json
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            trivy-fs-report.json
+            gitleaks-report.json
